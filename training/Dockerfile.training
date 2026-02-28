@@ -33,7 +33,7 @@ RUN pip install --no-cache-dir \
     "freqtrade[freqai]" \
     lightgbm \
     scikit-learn \
-    "git+https://github.com/twopirllc/pandas-ta.git" \
+    pandas-ta \
     xgboost \
     tqdm \
     colorlog
