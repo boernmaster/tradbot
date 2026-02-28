@@ -1,20 +1,26 @@
 # docker-compose.raspi.yml
 # Full production stack — runs on any Linux host (RPi 4, x86_64 NAS, mini-PC, etc.).
 # Runs 24/7: Freqtrade (inference) + signal-cli + OpenClaw.
-# All images are multi-arch and Docker will pull the correct variant automatically.
+# All images are multi-arch; Docker pulls the correct variant automatically.
+#
+# Two path variables (set in .environment):
+#   DATA_ROOT       Persistent data: models, signal-cli, openclaw state.
+#                   RPi: /mnt/ssd   |   NAS: /volume1/docker/tradbot-data
+#   RASPI_STACK_PATH  Repo root: where configs and skills are read from.
+#                   Often ${DATA_ROOT}/tradbot, but can differ (e.g. NAS repo
+#                   at /volume1/docker/tradbot with data at a separate volume).
 #
 # Prerequisites:
-#   - Persistent storage mounted at DATA_ROOT (default: /mnt/ssd) — see setup.sh
-#   - .environment file with all secrets filled in
-#   - signal-cli bot number registered (see scripts/server_setup.sh)
+#   - DATA_ROOT exists and is mounted
+#   - RASPI_STACK_PATH contains the cloned/synced repo (run deploy_stack.sh)
+#   - .environment filled in (copy from .env.example)
 #   - Pre-trained model at $DATA_ROOT/freqtrade/user_data/models/
+#   - signal-cli bot number registered
 #
 # Usage:
 #   docker compose -f docker-compose.raspi.yml --env-file .environment up -d
 #   docker compose -f docker-compose.raspi.yml --env-file .environment restart freqtrade
 #   docker compose -f docker-compose.raspi.yml --env-file .environment logs -f
-
-x-data-root: &data-root ${DATA_ROOT:-/mnt/ssd}
 
 services:
 
@@ -23,11 +29,11 @@ services:
     image: freqtradeorg/freqtrade:stable_freqai
     restart: unless-stopped
     volumes:
-      # user_data (models, data, logs) on persistent storage — mandatory
+      # user_data (models, logs) — on persistent data storage
       - ${DATA_ROOT:-/mnt/ssd}/freqtrade/user_data:/freqtrade/user_data
-      # configs synced here by deploy_stack.sh
-      - ${DATA_ROOT:-/mnt/ssd}/tradbot/freqtrade/config.json:/freqtrade/config.json:ro
-      - ${DATA_ROOT:-/mnt/ssd}/tradbot/freqtrade/config.freqai.json:/freqtrade/config.freqai.json:ro
+      # configs — read from repo (keep in sync via deploy_stack.sh)
+      - ${RASPI_STACK_PATH:-/mnt/ssd/tradbot}/freqtrade/config.json:/freqtrade/config.json:ro
+      - ${RASPI_STACK_PATH:-/mnt/ssd/tradbot}/freqtrade/config.freqai.json:/freqtrade/config.freqai.json:ro
     ports:
       # Bind to LAN IP only — never expose 0.0.0.0 in production
       - "${PROD_LAN_IP:-127.0.0.1}:8080:8080"
@@ -48,7 +54,8 @@ services:
       - FREQTRADE__API_SERVER__USERNAME=${FREQTRADE_USERNAME:-trader}
       - FREQTRADE__API_SERVER__PASSWORD=${FREQTRADE_PASSWORD}
     healthcheck:
-      test: ["CMD", "curl", "-f", "-u", "${FREQTRADE_USERNAME:-trader}:${FREQTRADE_PASSWORD}", "http://localhost:8080/api/v1/health"]
+      # /api/v1/ping is unauthenticated — no credentials needed
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/ping"]
       interval: 60s
       timeout: 10s
       retries: 3
@@ -78,11 +85,11 @@ services:
       sh -c "npm install -g openclaw@latest 2>/dev/null &&
              openclaw gateway --port 18789 --config /root/.openclaw/openclaw.json"
     volumes:
-      # Persistent OpenClaw state (accounts, cache)
+      # Persistent OpenClaw state (Signal account, cache)
       - ${DATA_ROOT:-/mnt/ssd}/openclaw:/root/.openclaw
-      # Skills mounted read-only from repo — update via deploy_stack.sh
-      - ${DATA_ROOT:-/mnt/ssd}/tradbot/openclaw/openclaw.json:/root/.openclaw/openclaw.json:ro
-      - ${DATA_ROOT:-/mnt/ssd}/tradbot/openclaw/skills:/root/.openclaw/workspace/skills:ro
+      # Skill config — read from repo, updated via deploy_stack.sh
+      - ${RASPI_STACK_PATH:-/mnt/ssd/tradbot}/openclaw/openclaw.json:/root/.openclaw/openclaw.json:ro
+      - ${RASPI_STACK_PATH:-/mnt/ssd/tradbot}/openclaw/skills:/root/.openclaw/workspace/skills:ro
     depends_on:
       - signal-cli
       - freqtrade

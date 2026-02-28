@@ -50,7 +50,7 @@ log "✅ SSH connection OK"
 # ── Rsync models ──────────────────────────────────────────────────────────────
 MODEL_SRC="$WORK_DIR/freqtrade/user_data/models/"
 
-log "Rsyncing models to RPi..."
+log "Rsyncing models to prod host..."
 log "  From: $MODEL_SRC"
 log "  To:   $RASPI_USER@$RASPI_HOST:$RASPI_MODEL_PATH"
 
@@ -67,25 +67,26 @@ BACKTEST_DST="$RASPI_USER@$RASPI_HOST:$DATA_ROOT/freqtrade/user_data/backtest_re
 
 eval $RSYNC_SSH "$BACKTEST_SRC" "$BACKTEST_DST" 2>/dev/null || log "⚠️  Backtest results rsync failed (non-fatal)"
 
-# ── Restart Freqtrade on RPi ──────────────────────────────────────────────────
-log "Restarting Freqtrade on RPi..."
-$SSH "cd $RASPI_STACK_PATH && docker compose restart freqtrade" 2>&1
+# ── Restart Freqtrade on prod host ───────────────────────────────────────────
+log "Restarting Freqtrade on prod host..."
+$SSH "cd $RASPI_STACK_PATH && docker compose -f docker-compose.raspi.yml --env-file .environment restart freqtrade" 2>&1
 
 log "✅ Freqtrade restarted with new model"
 
 # ── Write update notification file ───────────────────────────────────────────
-# OpenClaw skill polls this file and sends Signal notification
+# OpenClaw skill polls this file and sends Signal notification.
+# DATA_ROOT here is the path on the REMOTE host, passed in by vastai_train.sh.
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M UTC')
 MODEL_TYPE="${TRAINING_MODEL:-lightgbm}"
 
-$SSH "cat > $DATA_ROOT/freqtrade/user_data/model_update.txt << 'EOF'
-timestamp=$TIMESTAMP
-model=$MODEL_TYPE
+$SSH "cat > ${DATA_ROOT}/freqtrade/user_data/model_update.txt << 'EOF'
+timestamp=${TIMESTAMP}
+model=${MODEL_TYPE}
 deployed=true
 EOF"
 
-log "✅ Model update notification written"
-log "RPi will notify via Signal: 'Neues Modell deployed ($MODEL_TYPE)'"
+log "✅ Model update notification written to ${DATA_ROOT}/freqtrade/user_data/model_update.txt"
+log "Prod host will notify via Signal: 'Neues Modell deployed ($MODEL_TYPE)'"
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 rm -f "$KEY_FILE"

@@ -1,7 +1,7 @@
 #!/bin/bash
 # vastai_train.sh
 # Provisions a Vast.ai RTX 3090 instance, runs the full training pipeline,
-# deploys model to RPi if quality gate passes, then self-terminates.
+# deploys model to prod host if quality gate passes, then self-terminates.
 #
 # Usage:
 #   ./scripts/vastai_train.sh
@@ -64,7 +64,7 @@ if [ "$DRY_RUN" = "true" ]; then
   exit 0
 fi
 
-# ── Encode RPi SSH key ────────────────────────────────────────────────────────
+# ── Encode prod host SSH key ──────────────────────────────────────────────────
 if [ -z "$RASPI_SSH_KEY_B64" ] && [ -f ~/.ssh/vastai_raspi_key ]; then
   RASPI_SSH_KEY_B64=$(base64 -w0 ~/.ssh/vastai_raspi_key)
 fi
@@ -72,24 +72,31 @@ fi
 if [ -z "$RASPI_SSH_KEY_B64" ]; then
   echo "❌ RASPI_SSH_KEY_B64 not set and ~/.ssh/vastai_raspi_key not found."
   echo "   Generate a deploy key: ssh-keygen -t ed25519 -f ~/.ssh/vastai_raspi_key -N ''"
-  echo "   Add public key to RPi: ~/.ssh/authorized_keys"
+  echo "   Add public key to prod host: ~/.ssh/authorized_keys"
   exit 1
 fi
 
+# Derive paths from DATA_ROOT if not explicitly set in .environment
+DATA_ROOT="${DATA_ROOT:-/mnt/ssd}"
+RASPI_MODEL_PATH="${RASPI_MODEL_PATH:-${DATA_ROOT}/freqtrade/user_data/models/}"
+RASPI_STACK_PATH="${RASPI_STACK_PATH:-${DATA_ROOT}/tradbot/}"
+
 # ── Provision ─────────────────────────────────────────────────────────────────
 echo "▶ Provisioning instance..."
+echo "▶ Prod host: $RASPI_USER@$RASPI_HOST | DATA_ROOT: $DATA_ROOT"
 
 LAUNCHED=$(vastai create instance "$INSTANCE_ID" \
   --image "$DOCKER_IMAGE" \
   --env "RASPI_HOST=${RASPI_HOST}" \
   --env "RASPI_USER=${RASPI_USER}" \
   --env "RASPI_SSH_KEY_B64=${RASPI_SSH_KEY_B64}" \
-  --env "RASPI_MODEL_PATH=/mnt/ssd/freqtrade/user_data/models/" \
-  --env "RASPI_STACK_PATH=/mnt/ssd/tradbot/" \
+  --env "DATA_ROOT=${DATA_ROOT}" \
+  --env "RASPI_MODEL_PATH=${RASPI_MODEL_PATH}" \
+  --env "RASPI_STACK_PATH=${RASPI_STACK_PATH}" \
   --env "KRAKEN_PAIRS=${KRAKEN_PAIRS:-BTC/USDT,ETH/USDT}" \
   --env "TRAINING_MODEL=${MODEL}" \
-  --env "TRAIN_DAYS=90" \
-  --env "BACKTEST_DAYS=30" \
+  --env "TRAIN_DAYS=${TRAIN_DAYS:-90}" \
+  --env "BACKTEST_DAYS=${BACKTEST_DAYS:-30}" \
   --disk "$DISK_GB" \
   --onstart "bash /app/training/entrypoint.sh" \
   --raw)
@@ -128,5 +135,5 @@ while true; do
 done
 
 echo ""
-echo "Check RPi Freqtrade web UI to confirm new model loaded."
+echo "Check prod host Freqtrade web UI to confirm new model loaded."
 echo "Or ask the bot: 'Wurde ein neues Modell deployed?'"

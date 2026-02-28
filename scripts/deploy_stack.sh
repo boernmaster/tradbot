@@ -1,6 +1,6 @@
 #!/bin/bash
 # deploy_stack.sh
-# Pushes configs, strategies, and OpenClaw skills from PC to the Raspberry Pi.
+# Pushes configs, strategies, and OpenClaw skills from PC to the production host.
 # Run from the project root after updating strategy, configs, or skills.
 #
 # What gets synced:
@@ -12,7 +12,7 @@
 # What does NOT get synced (excluded):
 #   - freqtrade/user_data/data/     (downloaded fresh on Vast.ai)
 #   - freqtrade/user_data/models/   (rsynced by deploy_model.sh from Vast.ai)
-#   - .environment                   (never synced — set manually on RPi)
+#   - .environment                   (never synced — set manually on prod host)
 #   - .git/
 #
 # Usage:
@@ -35,7 +35,8 @@ source "$PROJECT_ROOT/.environment" 2>/dev/null || {
 : "${RASPI_HOST:?RASPI_HOST not set in .environment}"
 : "${RASPI_USER:?RASPI_USER not set in .environment}"
 
-RASPI_STACK_PATH="${RASPI_STACK_PATH:-/mnt/ssd/tradbot}"
+DATA_ROOT="${DATA_ROOT:-/mnt/ssd}"
+RASPI_STACK_PATH="${RASPI_STACK_PATH:-${DATA_ROOT}/tradbot}"
 SSH_KEY="${RASPI_SSH_KEY_FILE:-$HOME/.ssh/vastai_raspi_key}"
 
 SSH_OPTS="-o StrictHostKeyChecking=no"
@@ -68,7 +69,7 @@ if [[ "$DRY_RUN" = "true" ]]; then
 fi
 
 echo ""
-echo "▶ Reloading Freqtrade config on RPi..."
+echo "▶ Reloading Freqtrade config on prod host..."
 ssh $SSH_OPTS "$RASPI_USER@$RASPI_HOST" \
     "cd $RASPI_STACK_PATH && docker compose -f docker-compose.raspi.yml --env-file .environment exec freqtrade freqtrade reload-config 2>/dev/null || true"
 

@@ -98,7 +98,7 @@ GATE_RESULT=$?
 set -e
 
 if [ $GATE_RESULT -eq 0 ]; then
-  log "✅ Quality gate PASSED. Deploying to RPi..."
+  log "✅ Quality gate PASSED. Deploying to prod host ($RASPI_HOST)..."
   bash "$WORK_DIR/training/deploy_model.sh"
   log "✅ Deployment complete."
 else
