@@ -1,15 +1,14 @@
 # Dockerfile.training
 # GPU training image for Vast.ai.
-# Built on PC, pushed to GHCR/Docker Hub, pulled by Vast.ai instance at runtime.
+# Built via GitHub Actions, pushed to ghcr.io/boernmaster/tradbot-training:latest.
 #
-# Build:   docker build -f training/Dockerfile.training -t ghcr.io/boernmaster/tradbot-training:latest .
-# Push:    docker push ghcr.io/boernmaster/tradbot-training:latest
-#
-# Uses PyTorch base image with CUDA 12.1 — compatible with CUDA 12.x drivers on Vast.ai
+# Uses plain Python 3.11 slim + explicit PyTorch CUDA wheels to avoid
+# dependency conflicts that occur when installing freqtrade[freqai] on top
+# of the pytorch/pytorch base image.
 
-FROM pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime
+FROM python:3.11-slim
 
-# System deps + Tailscale (for secure deploy to prod host without opening SSH port)
+# System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     rsync \
@@ -20,17 +19,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
+# Tailscale — for secure deploy to prod host without opening SSH port
 RUN curl -fsSL https://tailscale.com/install.sh | sh
 
-# Python deps — FreqAI with all model backends
-# (torch is already in the base image; reinstalling ensures version compat)
+# PyTorch with CUDA 12.1 — install first so freqtrade[freqai] reuses it
+RUN pip install --no-cache-dir \
+    torch \
+    torchvision \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# FreqAI + all model backends
 RUN pip install --no-cache-dir \
     "freqtrade[freqai]" \
     lightgbm \
     scikit-learn \
     "git+https://github.com/twopirllc/pandas-ta.git" \
     xgboost \
-    torchvision \
     tqdm \
     colorlog
 
@@ -39,9 +43,6 @@ RUN python3 -c "import torch; print('CUDA available:', torch.cuda.is_available()
 
 WORKDIR /app
 
-# Copy entrypoint.sh into the image so vastai_train.sh can call it via --onstart.
-# entrypoint.sh then clones the repo to get the latest strategy files (configs,
-# LightGBMStrategy.py). Only rebuild the image when the pipeline itself changes.
 COPY training/entrypoint.sh /app/training/entrypoint.sh
 RUN chmod +x /app/training/entrypoint.sh
 
