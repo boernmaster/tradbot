@@ -28,7 +28,7 @@ RUN pip install --no-cache-dir \
     "freqtrade[freqai]" \
     lightgbm \
     scikit-learn \
-    pandas-ta \
+    pandas_ta \
     xgboost \
     torchvision \
     tqdm \
