@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod +x /home/boern/pyton_apps/tradbot/training/*.sh /home/boern/pyton_apps/tradbot/scripts/*.sh)"
+    ]
+  }
+}

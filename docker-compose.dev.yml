@@ -1,0 +1,39 @@
+# docker-compose.dev.yml
+# Local development stack — runs on the PC (x86_64).
+# No training. Use for: backtesting, dry-run, strategy iteration, UI access.
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml --env-file .environment up -d
+#   docker compose -f docker-compose.dev.yml run --rm freqtrade backtesting \
+#     --config /freqtrade/config.json --config /freqtrade/config.freqai.json \
+#     --strategy LightGBMStrategy --timerange 20240101-20240401
+#   docker compose -f docker-compose.dev.yml run --rm freqtrade download-data \
+#     --exchange kraken --pairs BTC/USDT ETH/USDT --timeframes 1h --days 100
+#
+# Web UI: http://localhost:8080  (credentials in config.json api_server section)
+
+services:
+  freqtrade:
+    image: freqtradeorg/freqtrade:stable_freqai
+    platform: linux/amd64
+    restart: "no"
+    volumes:
+      - ./freqtrade/user_data:/freqtrade/user_data
+      - ./freqtrade/config.json:/freqtrade/config.json:ro
+      - ./freqtrade/config.freqai.json:/freqtrade/config.freqai.json:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+    command: >
+      trade
+      --config /freqtrade/config.json
+      --config /freqtrade/config.freqai.json
+      --strategy LightGBMStrategy
+      --logfile /freqtrade/user_data/logs/freqtrade.log
+    env_file:
+      - .environment
+    environment:
+      - FREQTRADE__EXCHANGE__KEY=${KRAKEN_API_KEY:-}
+      - FREQTRADE__EXCHANGE__SECRET=${KRAKEN_SECRET:-}
+      - FREQTRADE__API_SERVER__USERNAME=${FREQTRADE_USERNAME:-trader}
+      - FREQTRADE__API_SERVER__PASSWORD=${FREQTRADE_PASSWORD:-changeme}
+      - FREQTRADE__DRY_RUN=${DRY_RUN:-true}

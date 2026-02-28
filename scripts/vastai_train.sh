@@ -1,0 +1,132 @@
+#!/bin/bash
+# vastai_train.sh
+# Provisions a Vast.ai RTX 3090 instance, runs the full training pipeline,
+# deploys model to RPi if quality gate passes, then self-terminates.
+#
+# Usage:
+#   ./scripts/vastai_train.sh
+#   ./scripts/vastai_train.sh --model lstm   (default: lightgbm)
+#   ./scripts/vastai_train.sh --dry-run      (search only, don't provision)
+
+set -e
+
+# ── Config ────────────────────────────────────────────────────────────────────
+MODEL=${1:-lightgbm}
+DRY_RUN=false
+[[ "$*" == *"--dry-run"* ]] && DRY_RUN=true
+[[ "$*" == *"--model"* ]] && MODEL=$(echo "$*" | grep -oP '(?<=--model )\S+')
+
+DOCKER_IMAGE="ghcr.io/boernmaster/tradbot-training:latest"
+DISK_GB=25
+MIN_RAM_GB=16
+MIN_DOWN_MBPS=200
+
+source "$(dirname "$0")/../.environment" 2>/dev/null || { echo "❌ .environment file not found"; exit 1; }
+
+if [ -z "$VASTAI_API_KEY" ]; then
+  echo "❌ VASTAI_API_KEY not set. Add it to .env"
+  exit 1
+fi
+
+vastai set api-key "$VASTAI_API_KEY" > /dev/null
+
+# ── Search for instance ───────────────────────────────────────────────────────
+echo "🔍 Searching for cheapest RTX 3090 in EU..."
+
+OFFER=$(vastai search offers \
+  "gpu_name=RTX_3090 \
+   rentable=true \
+   num_gpus=1 \
+   inet_down>$MIN_DOWN_MBPS \
+   cpu_ram>$MIN_RAM_GB \
+   disk_space>$DISK_GB \
+   reliability>0.95 \
+   cuda_vers>=12.0" \
+  -o dph_total \
+  --limit 5 \
+  --raw 2>/dev/null)
+
+if [ -z "$OFFER" ] || [ "$OFFER" = "[]" ]; then
+  echo "❌ No suitable instances found. Try relaxing filters."
+  exit 1
+fi
+
+BEST=$(echo "$OFFER" | jq '.[0]')
+INSTANCE_ID=$(echo "$BEST" | jq -r '.id')
+PRICE=$(echo "$BEST" | jq -r '.dph_total')
+LOCATION=$(echo "$BEST" | jq -r '.geolocation')
+VRAM=$(echo "$BEST" | jq -r '.gpu_ram')
+
+echo "✅ Found: Instance $INSTANCE_ID | €${PRICE}/hr | ${LOCATION} | ${VRAM}GB VRAM"
+
+if [ "$DRY_RUN" = "true" ]; then
+  echo "🔎 Dry-run mode — not provisioning. Exiting."
+  exit 0
+fi
+
+# ── Encode RPi SSH key ────────────────────────────────────────────────────────
+if [ -z "$RASPI_SSH_KEY_B64" ] && [ -f ~/.ssh/vastai_raspi_key ]; then
+  RASPI_SSH_KEY_B64=$(base64 -w0 ~/.ssh/vastai_raspi_key)
+fi
+
+if [ -z "$RASPI_SSH_KEY_B64" ]; then
+  echo "❌ RASPI_SSH_KEY_B64 not set and ~/.ssh/vastai_raspi_key not found."
+  echo "   Generate a deploy key: ssh-keygen -t ed25519 -f ~/.ssh/vastai_raspi_key -N ''"
+  echo "   Add public key to RPi: ~/.ssh/authorized_keys"
+  exit 1
+fi
+
+# ── Provision ─────────────────────────────────────────────────────────────────
+echo "▶ Provisioning instance..."
+
+LAUNCHED=$(vastai create instance "$INSTANCE_ID" \
+  --image "$DOCKER_IMAGE" \
+  --env "RASPI_HOST=${RASPI_HOST}" \
+  --env "RASPI_USER=${RASPI_USER}" \
+  --env "RASPI_SSH_KEY_B64=${RASPI_SSH_KEY_B64}" \
+  --env "RASPI_MODEL_PATH=/mnt/ssd/freqtrade/user_data/models/" \
+  --env "RASPI_STACK_PATH=/mnt/ssd/tradbot/" \
+  --env "KRAKEN_PAIRS=${KRAKEN_PAIRS:-BTC/USDT,ETH/USDT}" \
+  --env "TRAINING_MODEL=${MODEL}" \
+  --env "TRAIN_DAYS=90" \
+  --env "BACKTEST_DAYS=30" \
+  --disk "$DISK_GB" \
+  --onstart "bash /app/training/entrypoint.sh" \
+  --raw)
+
+CONTRACT_ID=$(echo "$LAUNCHED" | jq -r '.new_contract')
+
+if [ -z "$CONTRACT_ID" ] || [ "$CONTRACT_ID" = "null" ]; then
+  echo "❌ Failed to provision instance. Response: $LAUNCHED"
+  exit 1
+fi
+
+echo "▶ Instance $CONTRACT_ID started."
+echo "▶ Model: $MODEL | Estimated duration: $([ "$MODEL" = "lightgbm" ] && echo "~20 min" || echo "~60 min")"
+echo "▶ Streaming logs (Ctrl+C safe — instance continues)..."
+echo ""
+
+# ── Watch ─────────────────────────────────────────────────────────────────────
+sleep 15  # wait for instance to start
+
+START_TIME=$(date +%s)
+
+while true; do
+  STATUS=$(vastai show instance "$CONTRACT_ID" --raw 2>/dev/null | jq -r '.actual_status' 2>/dev/null || echo "unknown")
+
+  if [ "$STATUS" = "exited" ] || [ "$STATUS" = "offline" ] || [ "$STATUS" = "unknown" ]; then
+    ELAPSED=$(( ($(date +%s) - START_TIME) / 60 ))
+    COST=$(echo "scale=3; $PRICE * $ELAPSED / 60" | bc)
+    echo ""
+    echo "✅ Training instance finished after ${ELAPSED} min (~€${COST})"
+    break
+  fi
+
+  # Print last log line every 30s
+  vastai logs "$CONTRACT_ID" --tail 3 2>/dev/null | tail -1
+  sleep 30
+done
+
+echo ""
+echo "Check RPi Freqtrade web UI to confirm new model loaded."
+echo "Or ask the bot: 'Wurde ein neues Modell deployed?'"

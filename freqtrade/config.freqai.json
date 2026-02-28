@@ -1,0 +1,51 @@
+{
+    "freqai": {
+        "enabled": true,
+        "purge_old_models": 2,
+        "train_period_days": 90,
+        "backtest_period_days": 7,
+        "live_retrain_hours": 0,
+        "expiration_hours": 0,
+        "fit_live_predictions_candles": 0,
+        "identifier": "lgbm-v1",
+        "feature_parameters": {
+            "include_timeframes": [
+                "1h"
+            ],
+            "include_corr_pairlist": [
+                "BTC/USDT",
+                "ETH/USDT"
+            ],
+            "label_period_candles": 24,
+            "include_shifted_candles": 2,
+            "DI_threshold": 0,
+            "weight_factor": 0.9,
+            "principal_component_analysis": false,
+            "use_SVM_to_remove_outliers": true,
+            "SVM_nu": 0.1,
+            "stratify_training_data": 0,
+            "indicator_periods_candles": [
+                14,
+                28
+            ]
+        },
+        "data_split_parameters": {
+            "test_size": 0.15,
+            "random_state": 42,
+            "shuffle": false
+        },
+        "model_training_parameters": {
+            "n_estimators": 200,
+            "learning_rate": 0.05,
+            "num_leaves": 32,
+            "max_depth": 6,
+            "min_child_samples": 50,
+            "subsample": 0.8,
+            "colsample_bytree": 0.8,
+            "reg_alpha": 0.1,
+            "reg_lambda": 0.1,
+            "n_jobs": -1,
+            "verbose": -1
+        }
+    }
+}
