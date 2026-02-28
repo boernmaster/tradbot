@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(chmod +x /home/boern/pyton_apps/tradbot/training/*.sh /home/boern/pyton_apps/tradbot/scripts/*.sh)"
+      "Bash(chmod +x /home/boern/pyton_apps/tradbot/training/*.sh /home/boern/pyton_apps/tradbot/scripts/*.sh)",
+      "Bash(docker info --format '{{.ServerVersion}}')",
+      "Bash(docker compose version)",
+      "Bash(/home/boern/pyton_apps/tradbot/.environment:*)",
+      "Bash(docker pull freqtradeorg/freqtrade:stable_freqai)",
+      "Bash(docker compose -f docker-compose.dev.yml --env-file .environment run --rm freqtrade download-data --exchange kraken --pairs BTC/USDT ETH/USDT --timeframes 1h --days 100 --datadir /freqtrade/user_data/data)",
+      "Bash(docker rmi freqtradeorg/freqtrade:stable_freqai)",
+      "Bash(docker system df)"
     ]
   }
 }
