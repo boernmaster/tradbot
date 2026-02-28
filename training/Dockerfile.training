@@ -6,7 +6,7 @@
 # dependency conflicts that occur when installing freqtrade[freqai] on top
 # of the pytorch/pytorch base image.
 
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
