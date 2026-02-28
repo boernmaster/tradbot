@@ -11,6 +11,8 @@
 
 set -e
 
+export PATH="$HOME/bin:$HOME/.local/bin:$PATH"
+
 LIMIT="${2:-5}"
 MIN_RAM_GB=16
 MIN_DOWN_MBPS=200

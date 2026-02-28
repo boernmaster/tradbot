@@ -10,10 +10,12 @@
 
 set -e
 
+export PATH="$HOME/bin:$HOME/.local/bin:$PATH"
+
 # ── Config ────────────────────────────────────────────────────────────────────
 MODEL=${1:-lightgbm}
-DRY_RUN=false
-[[ "$*" == *"--dry-run"* ]] && DRY_RUN=true
+SEARCH_ONLY=false
+[[ "$*" == *"--dry-run"* ]] && SEARCH_ONLY=true
 [[ "$*" == *"--model"* ]] && MODEL=$(echo "$*" | grep -oP '(?<=--model )\S+')
 
 DOCKER_IMAGE="ghcr.io/boernmaster/tradbot-training:latest"
@@ -56,12 +58,12 @@ BEST=$(echo "$OFFER" | jq '.[0]')
 INSTANCE_ID=$(echo "$BEST" | jq -r '.id')
 PRICE=$(echo "$BEST" | jq -r '.dph_total')
 LOCATION=$(echo "$BEST" | jq -r '.geolocation')
-VRAM=$(echo "$BEST" | jq -r '.gpu_ram')
+VRAM=$(echo "$BEST" | jq -r '(.gpu_ram / 1024 | floor)')  # gpu_ram is in MB
 GPU_NAME=$(echo "$BEST" | jq -r '.gpu_name')
 
 echo "✅ Found: Instance $INSTANCE_ID | ${GPU_NAME} | €${PRICE}/hr | ${LOCATION} | ${VRAM}GB VRAM"
 
-if [ "$DRY_RUN" = "true" ]; then
+if [ "$SEARCH_ONLY" = "true" ]; then
   echo "🔎 Dry-run mode — not provisioning. Exiting."
   exit 0
 fi
@@ -94,6 +96,11 @@ RASPI_STACK_PATH="${RASPI_STACK_PATH:-${DATA_ROOT}/tradbot/}"
 echo "▶ Provisioning instance..."
 echo "▶ Prod host: $RASPI_USER@$RASPI_HOST | DATA_ROOT: $DATA_ROOT"
 
+# --onstart expects a local file path (vastai reads and uploads it)
+ONSTART_FILE=$(mktemp /tmp/vastai_onstart_XXXXXX.sh)
+echo '#!/bin/bash' > "$ONSTART_FILE"
+echo 'bash /app/training/entrypoint.sh' >> "$ONSTART_FILE"
+
 LAUNCHED=$(vastai create instance "$INSTANCE_ID" \
   --image "$DOCKER_IMAGE" \
   --env "RASPI_HOST=${RASPI_HOST}" \
@@ -109,8 +116,10 @@ LAUNCHED=$(vastai create instance "$INSTANCE_ID" \
   --env "TRAIN_DAYS=${TRAIN_DAYS:-90}" \
   --env "BACKTEST_DAYS=${BACKTEST_DAYS:-30}" \
   --disk "$DISK_GB" \
-  --onstart "bash /app/training/entrypoint.sh" \
+  --onstart "$ONSTART_FILE" \
   --raw)
+
+rm -f "$ONSTART_FILE"
 
 CONTRACT_ID=$(echo "$LAUNCHED" | jq -r '.new_contract')
 
