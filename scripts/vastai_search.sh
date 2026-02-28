@@ -1,6 +1,6 @@
 #!/bin/bash
 # vastai_search.sh
-# Finds the cheapest available RTX 3090 instances on Vast.ai matching our filters.
+# Finds the cheapest available GPU instances (RTX 3090/4080/4090) on Vast.ai.
 # Use this to preview options before running vastai_train.sh.
 #
 # Usage:
@@ -20,12 +20,13 @@ source "$(dirname "$0")/../.environment" 2>/dev/null || { echo "❌ .environment
 
 vastai set api-key "$VASTAI_API_KEY" > /dev/null
 
-echo "🔍 Searching for RTX 3090 instances (cheapest first)..."
+# gpu_ram>=16 + cuda_vers>=12.0 matches: RTX 3090 (24GB), 4080 (16GB), 4090 (24GB)
+echo "🔍 Searching for GPU instances (≥16GB VRAM, CUDA 12+, cheapest first)..."
 
 vastai search offers \
-    "gpu_name=RTX_3090 \
-     rentable=true \
+    "rentable=true \
      num_gpus=1 \
+     gpu_ram>=16 \
      inet_down>$MIN_DOWN_MBPS \
      cpu_ram>$MIN_RAM_GB \
      disk_space>$MIN_DISK_GB \
@@ -33,7 +34,7 @@ vastai search offers \
      cuda_vers>=12.0" \
     -o dph_total \
     --limit "$LIMIT" \
-    | head -20
+    | head -30
 
 echo ""
 echo "Run ./scripts/vastai_train.sh to provision the cheapest option."

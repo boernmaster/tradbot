@@ -1,7 +1,7 @@
 #!/bin/bash
 # vastai_train.sh
-# Provisions a Vast.ai RTX 3090 instance, runs the full training pipeline,
-# deploys model to prod host if quality gate passes, then self-terminates.
+# Provisions a Vast.ai GPU instance (RTX 3090/4080/4090), runs the full training
+# pipeline, deploys model to prod host if quality gate passes, then self-terminates.
 #
 # Usage:
 #   ./scripts/vastai_train.sh
@@ -31,12 +31,13 @@ fi
 vastai set api-key "$VASTAI_API_KEY" > /dev/null
 
 # ── Search for instance ───────────────────────────────────────────────────────
-echo "🔍 Searching for cheapest RTX 3090 in EU..."
+# gpu_ram>=16 + cuda_vers>=12.0 matches: RTX 3090 (24GB), 4080 (16GB), 4090 (24GB)
+echo "🔍 Searching for cheapest GPU (≥16GB VRAM, CUDA 12+)..."
 
 OFFER=$(vastai search offers \
-  "gpu_name=RTX_3090 \
-   rentable=true \
+  "rentable=true \
    num_gpus=1 \
+   gpu_ram>=16 \
    inet_down>$MIN_DOWN_MBPS \
    cpu_ram>$MIN_RAM_GB \
    disk_space>$DISK_GB \
@@ -56,8 +57,9 @@ INSTANCE_ID=$(echo "$BEST" | jq -r '.id')
 PRICE=$(echo "$BEST" | jq -r '.dph_total')
 LOCATION=$(echo "$BEST" | jq -r '.geolocation')
 VRAM=$(echo "$BEST" | jq -r '.gpu_ram')
+GPU_NAME=$(echo "$BEST" | jq -r '.gpu_name')
 
-echo "✅ Found: Instance $INSTANCE_ID | €${PRICE}/hr | ${LOCATION} | ${VRAM}GB VRAM"
+echo "✅ Found: Instance $INSTANCE_ID | ${GPU_NAME} | €${PRICE}/hr | ${LOCATION} | ${VRAM}GB VRAM"
 
 if [ "$DRY_RUN" = "true" ]; then
   echo "🔎 Dry-run mode — not provisioning. Exiting."
@@ -76,6 +78,13 @@ if [ -z "$RASPI_SSH_KEY_B64" ]; then
   exit 1
 fi
 
+if [ -z "$TAILSCALE_AUTH_KEY" ]; then
+  echo "❌ TAILSCALE_AUTH_KEY not set."
+  echo "   Generate at: https://login.tailscale.com/admin/settings/keys"
+  echo "   Use type: Reusable, Ephemeral, no expiry (or short expiry)"
+  exit 1
+fi
+
 # Derive paths from DATA_ROOT if not explicitly set in .environment
 DATA_ROOT="${DATA_ROOT:-/mnt/ssd}"
 RASPI_MODEL_PATH="${RASPI_MODEL_PATH:-${DATA_ROOT}/freqtrade/user_data/models/}"
@@ -90,11 +99,13 @@ LAUNCHED=$(vastai create instance "$INSTANCE_ID" \
   --env "RASPI_HOST=${RASPI_HOST}" \
   --env "RASPI_USER=${RASPI_USER}" \
   --env "RASPI_SSH_KEY_B64=${RASPI_SSH_KEY_B64}" \
+  --env "TAILSCALE_AUTH_KEY=${TAILSCALE_AUTH_KEY}" \
   --env "DATA_ROOT=${DATA_ROOT}" \
   --env "RASPI_MODEL_PATH=${RASPI_MODEL_PATH}" \
   --env "RASPI_STACK_PATH=${RASPI_STACK_PATH}" \
   --env "KRAKEN_PAIRS=${KRAKEN_PAIRS:-BTC/USDT,ETH/USDT}" \
   --env "TRAINING_MODEL=${MODEL}" \
+  --env "TRAINING_EXCHANGE=${TRAINING_EXCHANGE:-binance}" \
   --env "TRAIN_DAYS=${TRAIN_DAYS:-90}" \
   --env "BACKTEST_DAYS=${BACKTEST_DAYS:-30}" \
   --disk "$DISK_GB" \

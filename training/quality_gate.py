@@ -12,6 +12,7 @@ Usage:
 import json
 import sys
 import argparse
+import zipfile
 
 # ── Thresholds (can override via args) ────────────────────────────────────────
 DEFAULT_MIN_SORTINO   = 1.5
@@ -36,8 +37,16 @@ def parse_args():
 
 
 def load_results(path):
-    with open(path) as f:
-        data = json.load(f)
+    # Freqtrade saves backtest results as .json.zip in newer versions
+    if zipfile.is_zipfile(path):
+        with zipfile.ZipFile(path) as zf:
+            json_files = [n for n in zf.namelist() if n.endswith(".json") and not n.endswith(".meta.json")]
+            if not json_files:
+                raise ValueError(f"No JSON found inside ZIP: {path}")
+            data = json.loads(zf.read(json_files[0]))
+    else:
+        with open(path) as f:
+            data = json.load(f)
     # Freqtrade backtest JSON structure
     strategies = data.get("strategy", data.get("strategy_comparison", {}))
     return strategies

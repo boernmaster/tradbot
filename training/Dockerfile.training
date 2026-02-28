@@ -9,7 +9,7 @@
 
 FROM pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime
 
-# System deps
+# System deps + Tailscale (for secure deploy to prod host without opening SSH port)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     rsync \
@@ -20,17 +20,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
+RUN curl -fsSL https://tailscale.com/install.sh | sh
+
 # Python deps — FreqAI with all model backends
+# (torch is already in the base image; reinstalling ensures version compat)
 RUN pip install --no-cache-dir \
     "freqtrade[freqai]" \
     lightgbm \
     scikit-learn \
     pandas-ta \
     xgboost \
-    # PyTorch already in base image — these add LSTM/Transformer support
-    torch \
     torchvision \
-    # Utilities
     tqdm \
     colorlog
 

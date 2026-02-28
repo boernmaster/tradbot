@@ -1,7 +1,7 @@
 #!/bin/bash
 # entrypoint.sh
 # Runs INSIDE the Vast.ai Docker container.
-# Full pipeline: clone → download → train → backtest → gate → deploy → done
+# Full pipeline: clone → download → train+backtest (walk-forward) → gate → deploy → done
 # The Vast.ai instance terminates when this script exits.
 
 set -e
@@ -14,36 +14,40 @@ TRAIN_DAYS=${TRAIN_DAYS:-90}
 BACKTEST_DAYS=${BACKTEST_DAYS:-30}
 PAIRS=${KRAKEN_PAIRS:-BTC/USDT,ETH/USDT}
 TIMEFRAME="1h"
+TRAINING_EXCHANGE=${TRAINING_EXCHANGE:-binance}  # binance=fast (no --dl-trades); kraken=slow but production-accurate
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 fail() { log "❌ FAILED: $*"; exit 1; }
 
 # ── Step 1: Clone repo ────────────────────────────────────────────────────────
-log "=== [1/5] Cloning repository ==="
+log "=== [1/4] Cloning repository ==="
 git clone --depth 1 "$REPO_URL" "$WORK_DIR" || fail "git clone failed"
 cd "$WORK_DIR"
 
 # ── Step 2: Download data ─────────────────────────────────────────────────────
-log "=== [2/5] Downloading Kraken data ==="
-log "Pairs: $PAIRS | Timeframe: $TIMEFRAME | Days: $TRAIN_DAYS"
+TOTAL_DAYS=$(( TRAIN_DAYS + BACKTEST_DAYS + 7 ))  # +7 buffer for FreqAI warmup
+
+log "=== [2/4] Downloading $TRAINING_EXCHANGE data ==="
+log "Pairs: $PAIRS | Timeframe: $TIMEFRAME | Days: $TOTAL_DAYS"
 
 IFS=',' read -ra PAIR_ARRAY <<< "$PAIRS"
 for PAIR in "${PAIR_ARRAY[@]}"; do
-  PAIR_CLEAN=$(echo "$PAIR" | tr '/' '_')
   log "Downloading $PAIR..."
+  EXTRA_OPTS=""
+  [[ "$TRAINING_EXCHANGE" = "kraken" ]] && EXTRA_OPTS="--dl-trades"
+
+  # shellcheck disable=SC2086
   freqtrade download-data \
-    --exchange kraken \
+    --exchange "$TRAINING_EXCHANGE" \
     --pairs "$PAIR" \
     --timeframes "$TIMEFRAME" \
-    --days $(( TRAIN_DAYS + BACKTEST_DAYS + 7 )) \
-    --datadir "$FREQTRADE_DIR/user_data/data" \
-    2>&1 | tail -3
+    --days "$TOTAL_DAYS" \
+    --userdir "$FREQTRADE_DIR/user_data" \
+    $EXTRA_OPTS \
+    2>&1 | tail -5
 done
 
-# ── Step 3: Train model ───────────────────────────────────────────────────────
-log "=== [3/5] Training FreqAI $MODEL model ==="
-
-# Select model type
+# ── Step 3: Select model class ────────────────────────────────────────────────
 if [ "$MODEL" = "lstm" ]; then
   MODEL_CLASS="PyTorchLSTMRegressor"
 elif [ "$MODEL" = "cnn_transformer" ]; then
@@ -54,43 +58,64 @@ fi
 
 log "Model class: $MODEL_CLASS"
 
-freqtrade train-freqai \
-  --config "$FREQTRADE_DIR/config.json" \
-  --config "$FREQTRADE_DIR/config.freqai.json" \
-  --strategy LightGBMStrategy \
-  --freqai-model "$MODEL_CLASS" \
-  --timerange "$(date -d "-${TRAIN_DAYS} days" '+%Y%m%d')-$(date '+%Y%m%d')" \
-  --datadir "$FREQTRADE_DIR/user_data/data" \
-  --userdir "$FREQTRADE_DIR/user_data" \
-  2>&1 | grep -E "(Training|Epoch|Loss|RMSE|Finished|Error)" || true
+# ── Step 4: FreqAI walk-forward train + backtest ──────────────────────────────
+# FreqAI trains a new model for each backtest_period_days window over the full
+# timerange. Training happens implicitly inside freqtrade backtesting.
+# No separate train-freqai step needed.
+log "=== [3/4] FreqAI walk-forward train + backtest ($MODEL_CLASS) ==="
+log "Training window: ${TRAIN_DAYS}d | Backtest validation: ${BACKTEST_DAYS}d"
 
-log "Training complete."
+RANGE_END=$(date '+%Y%m%d')
+RANGE_START=$(date -d "-$(( TRAIN_DAYS + BACKTEST_DAYS )) days" '+%Y%m%d')
 
-# ── Step 4: Backtest ──────────────────────────────────────────────────────────
-log "=== [4/5] Running backtest (last $BACKTEST_DAYS days) ==="
+# Build config list — add exchange override when not using Kraken
+CONFIG_ARGS=(
+  --config "$FREQTRADE_DIR/config.json"
+  --config "$FREQTRADE_DIR/config.freqai.json"
+)
 
-BACKTEST_END=$(date '+%Y%m%d')
-BACKTEST_START=$(date -d "-${BACKTEST_DAYS} days" '+%Y%m%d')
+if [[ "$TRAINING_EXCHANGE" != "kraken" ]]; then
+  OVERRIDE_CFG="/tmp/exchange_override.json"
+  echo "{\"exchange\": {\"name\": \"$TRAINING_EXCHANGE\", \"key\": \"\", \"secret\": \"\"}}" > "$OVERRIDE_CFG"
+  CONFIG_ARGS+=(--config "$OVERRIDE_CFG")
+  log "Exchange override: using $TRAINING_EXCHANGE data"
+fi
 
 freqtrade backtesting \
-  --config "$FREQTRADE_DIR/config.json" \
-  --config "$FREQTRADE_DIR/config.freqai.json" \
+  "${CONFIG_ARGS[@]}" \
   --strategy LightGBMStrategy \
-  --timerange "${BACKTEST_START}-${BACKTEST_END}" \
-  --datadir "$FREQTRADE_DIR/user_data/data" \
+  --freqaimodel "$MODEL_CLASS" \
+  --timerange "${RANGE_START}-${RANGE_END}" \
   --userdir "$FREQTRADE_DIR/user_data" \
   --export trades \
-  --export-filename "$FREQTRADE_DIR/user_data/backtest_results/last_backtest.json" \
-  2>&1 | grep -E "(Backtesting|Wins|Losses|Sortino|Drawdown|Total)" || true
+  2>&1 | grep -E "(Training|Backtesting|Wins|Losses|Sortino|Drawdown|Total profit|Error|RMSE|Finished)" || true
 
-RESULT_FILE="$FREQTRADE_DIR/user_data/backtest_results/last_backtest.json"
+# Discover the result file via Freqtrade's pointer file
+LAST_RESULT_PTR="$FREQTRADE_DIR/user_data/backtest_results/.last_result.json"
+if [ ! -f "$LAST_RESULT_PTR" ]; then
+  fail "No backtest result pointer found: $LAST_RESULT_PTR (backtesting may have failed)"
+fi
+
+RESULT_FILENAME=$(python3 -c "import json; d=json.load(open('$LAST_RESULT_PTR')); print(d.get('latest_backtest',''))")
+if [ -z "$RESULT_FILENAME" ]; then
+  fail "Could not parse latest_backtest from $LAST_RESULT_PTR"
+fi
+
+# Resolve to absolute path (Freqtrade stores relative filename)
+if [[ "$RESULT_FILENAME" = /* ]]; then
+  RESULT_FILE="$RESULT_FILENAME"
+else
+  RESULT_FILE="$FREQTRADE_DIR/user_data/backtest_results/$RESULT_FILENAME"
+fi
 
 if [ ! -f "$RESULT_FILE" ]; then
   fail "Backtest result file not found: $RESULT_FILE"
 fi
 
-# ── Step 5: Quality gate + deploy ─────────────────────────────────────────────
-log "=== [5/5] Quality gate ==="
+log "Backtest result: $RESULT_FILE"
+
+# ── Step 4: Quality gate + deploy ─────────────────────────────────────────────
+log "=== [4/4] Quality gate ==="
 
 set +e
 python3 "$WORK_DIR/training/quality_gate.py" "$RESULT_FILE"
