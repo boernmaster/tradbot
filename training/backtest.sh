@@ -15,7 +15,7 @@
 set -e
 
 BACKTEST_DAYS="${BACKTEST_DAYS:-30}"
-FREQTRADE_DIR="/app/signal-trader/freqtrade"
+FREQTRADE_DIR="/app/tradbot/freqtrade"
 RESULT_FILE="$FREQTRADE_DIR/user_data/backtest_results/last_backtest.json"
 
 BACKTEST_END=$(date '+%Y%m%d')

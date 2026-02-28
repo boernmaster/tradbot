@@ -14,7 +14,7 @@ set -e
 
 MODEL="${TRAINING_MODEL:-lightgbm}"
 TRAIN_DAYS="${TRAIN_DAYS:-90}"
-FREQTRADE_DIR="/app/signal-trader/freqtrade"
+FREQTRADE_DIR="/app/tradbot/freqtrade"
 
 case "$MODEL" in
     lstm)            MODEL_CLASS="PyTorchLSTMRegressor" ;;

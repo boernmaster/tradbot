@@ -16,7 +16,7 @@ set -e
 PAIRS="${KRAKEN_PAIRS:-BTC/USDT,ETH/USDT}"
 TOTAL_DAYS=$(( ${TRAIN_DAYS:-90} + ${BACKTEST_DAYS:-30} + 7 ))
 TIMEFRAME="${TIMEFRAME:-1h}"
-FREQTRADE_DIR="/app/signal-trader/freqtrade"
+FREQTRADE_DIR="/app/tradbot/freqtrade"
 
 echo "[download_data] Pairs: $PAIRS | Days: $TOTAL_DAYS | Timeframe: $TIMEFRAME"
 

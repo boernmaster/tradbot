@@ -1,0 +1,20 @@
+{
+  "model": "claude-haiku-4-5-20251001",
+  "signal": {
+    "botNumber": "${OPENCLAW_BOT_NUMBER}",
+    "allowFrom": ["${OPENCLAW_ALLOW_FROM}"]
+  },
+  "gateway": {
+    "port": 18789
+  },
+  "skills": [
+    "freqtrade-trader"
+  ],
+  "cron": [
+    {
+      "schedule": "0 20 * * *",
+      "timezone": "Europe/Vienna",
+      "message": "Tages-Zusammenfassung: Bitte zeig mir Portfolio-Wert, heutiger P&L, Anzahl Trades heute, aktuelle offene Positionen, und ob ein neues Modell deployed wurde."
+    }
+  ]
+}

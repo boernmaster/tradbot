@@ -214,3 +214,6 @@ freqtrade/logs/
 
 # Environment secrets
 .environment
+
+# config.dev.json is tracked (Binance override for local dev)
+!freqtrade/config.dev.json

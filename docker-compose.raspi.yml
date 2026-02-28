@@ -1,0 +1,101 @@
+# docker-compose.raspi.yml
+# Full production stack — runs on any Linux host (RPi 4, x86_64 NAS, mini-PC, etc.).
+# Runs 24/7: Freqtrade (inference) + signal-cli + OpenClaw.
+# All images are multi-arch and Docker will pull the correct variant automatically.
+#
+# Prerequisites:
+#   - Persistent storage mounted at DATA_ROOT (default: /mnt/ssd) — see setup.sh
+#   - .environment file with all secrets filled in
+#   - signal-cli bot number registered (see scripts/server_setup.sh)
+#   - Pre-trained model at $DATA_ROOT/freqtrade/user_data/models/
+#
+# Usage:
+#   docker compose -f docker-compose.raspi.yml --env-file .environment up -d
+#   docker compose -f docker-compose.raspi.yml --env-file .environment restart freqtrade
+#   docker compose -f docker-compose.raspi.yml --env-file .environment logs -f
+
+x-data-root: &data-root ${DATA_ROOT:-/mnt/ssd}
+
+services:
+
+  # ── Freqtrade — inference + live trading ──────────────────────────────────
+  freqtrade:
+    image: freqtradeorg/freqtrade:stable_freqai
+    restart: unless-stopped
+    volumes:
+      # user_data (models, data, logs) on persistent storage — mandatory
+      - ${DATA_ROOT:-/mnt/ssd}/freqtrade/user_data:/freqtrade/user_data
+      # configs synced here by deploy_stack.sh
+      - ${DATA_ROOT:-/mnt/ssd}/tradbot/freqtrade/config.json:/freqtrade/config.json:ro
+      - ${DATA_ROOT:-/mnt/ssd}/tradbot/freqtrade/config.freqai.json:/freqtrade/config.freqai.json:ro
+    ports:
+      # Bind to LAN IP only — never expose 0.0.0.0 in production
+      - "${PROD_LAN_IP:-127.0.0.1}:8080:8080"
+    command: >
+      trade
+      --config /freqtrade/config.json
+      --config /freqtrade/config.freqai.json
+      --strategy LightGBMStrategy
+      --logfile /freqtrade/user_data/logs/freqtrade.log
+    env_file:
+      - .environment
+    environment:
+      - FREQTRADE__EXCHANGE__KEY=${KRAKEN_API_KEY}
+      - FREQTRADE__EXCHANGE__SECRET=${KRAKEN_SECRET}
+      - FREQTRADE__DRY_RUN=${DRY_RUN:-true}
+      - FREQTRADE__API_SERVER__ENABLED=true
+      - FREQTRADE__API_SERVER__LISTEN_IP_ADDRESS=0.0.0.0
+      - FREQTRADE__API_SERVER__USERNAME=${FREQTRADE_USERNAME:-trader}
+      - FREQTRADE__API_SERVER__PASSWORD=${FREQTRADE_PASSWORD}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-u", "${FREQTRADE_USERNAME:-trader}:${FREQTRADE_PASSWORD}", "http://localhost:8080/api/v1/health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - tradbot
+
+  # ── signal-cli — Signal messenger backend ─────────────────────────────────
+  signal-cli:
+    image: bbernhard/signal-cli-rest-api:latest
+    restart: unless-stopped
+    volumes:
+      # Signal account data — persists across restarts
+      - ${DATA_ROOT:-/mnt/ssd}/signal-data:/home/.local/share/signal-cli
+    environment:
+      - MODE=json-rpc
+    networks:
+      - tradbot
+
+  # ── OpenClaw — Signal → Haiku gateway ─────────────────────────────────────
+  openclaw:
+    image: node:22-alpine
+    restart: unless-stopped
+    working_dir: /app
+    # Installs openclaw globally on first start; subsequent starts use cache
+    command: >
+      sh -c "npm install -g openclaw@latest 2>/dev/null &&
+             openclaw gateway --port 18789 --config /root/.openclaw/openclaw.json"
+    volumes:
+      # Persistent OpenClaw state (accounts, cache)
+      - ${DATA_ROOT:-/mnt/ssd}/openclaw:/root/.openclaw
+      # Skills mounted read-only from repo — update via deploy_stack.sh
+      - ${DATA_ROOT:-/mnt/ssd}/tradbot/openclaw/openclaw.json:/root/.openclaw/openclaw.json:ro
+      - ${DATA_ROOT:-/mnt/ssd}/tradbot/openclaw/skills:/root/.openclaw/workspace/skills:ro
+    depends_on:
+      - signal-cli
+      - freqtrade
+    env_file:
+      - .environment
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENCLAW_BOT_NUMBER=${OPENCLAW_BOT_NUMBER}
+      - OPENCLAW_ALLOW_FROM=${OPENCLAW_ALLOW_FROM}
+      - SIGNAL_CLI_URL=http://signal-cli:8080
+    networks:
+      - tradbot
+
+networks:
+  tradbot:
+    driver: bridge

@@ -21,6 +21,7 @@ services:
       - ./freqtrade/user_data:/freqtrade/user_data
       - ./freqtrade/config.json:/freqtrade/config.json:ro
       - ./freqtrade/config.freqai.json:/freqtrade/config.freqai.json:ro
+      - ./freqtrade/config.dev.json:/freqtrade/config.dev.json:ro
     ports:
       - "127.0.0.1:8080:8080"
     command: >
