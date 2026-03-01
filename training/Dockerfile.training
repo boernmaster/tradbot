@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rsync \
     openssh-client \
     openssh-server \
+    tmux \
     curl \
     jq \
     bc \
