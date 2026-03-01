@@ -6,7 +6,8 @@ on:
     paths:
       - "Dockerfile.openclaw"
       - "Dockerfile.training"
-      - "training/**"
+      - "training/entrypoint.sh"
+      - "training/quality_gate.py"
   workflow_dispatch:
 
 env:
@@ -20,10 +21,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      contains(github.event.head_commit.modified, 'Dockerfile.openclaw') ||
-      contains(github.event.head_commit.added, 'Dockerfile.openclaw')
     steps:
       - uses: actions/checkout@v4
 
@@ -53,11 +50,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      contains(github.event.head_commit.modified, 'Dockerfile.training') ||
-      contains(github.event.head_commit.modified, 'training/entrypoint.sh') ||
-      contains(github.event.head_commit.added, 'Dockerfile.training')
     steps:
       - uses: actions/checkout@v4
 
