@@ -35,8 +35,8 @@ class LightGBMStrategy(IStrategy):
         "0": 0.05,
     }
 
-    stoploss = -0.05
-    trailing_stop = False
+    stoploss = -0.10
+    trailing_stop = True
 
     process_only_new_candles = True
     use_exit_signal = True
@@ -44,7 +44,7 @@ class LightGBMStrategy(IStrategy):
     ignore_roi_if_entry_signal = False
 
     # FreqAI prediction threshold for entry (% predicted gain)
-    entry_threshold = 0.01   # predict at least +1% next 24 candles
+    entry_threshold = 0.02   # predict at least +2% next 24 candles
     exit_threshold = -0.005  # exit when prediction drops below -0.5%
 
     def informative_pairs(self):
