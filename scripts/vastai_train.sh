@@ -96,11 +96,8 @@ RASPI_STACK_PATH="${RASPI_STACK_PATH:-${DATA_ROOT}/tradbot/}"
 echo "▶ Provisioning instance..."
 echo "▶ Prod host: $RASPI_USER@$RASPI_HOST | DATA_ROOT: $DATA_ROOT"
 
-# --onstart expects a local file path (vastai reads and uploads it)
-ONSTART_FILE=$(mktemp /tmp/vastai_onstart_XXXXXX.sh)
-echo '#!/bin/bash' > "$ONSTART_FILE"
-echo 'bash /app/training/entrypoint.sh' >> "$ONSTART_FILE"
-
+# No --onstart needed: the Dockerfile CMD runs entrypoint.sh automatically.
+# CONTRACT_ID is passed in so entrypoint.sh can self-destroy the instance on exit.
 LAUNCHED=$(vastai create instance "$INSTANCE_ID" \
   --image "$DOCKER_IMAGE" \
   --env "RASPI_HOST=${RASPI_HOST}" \
@@ -115,11 +112,9 @@ LAUNCHED=$(vastai create instance "$INSTANCE_ID" \
   --env "TRAINING_EXCHANGE=${TRAINING_EXCHANGE:-binance}" \
   --env "TRAIN_DAYS=${TRAIN_DAYS:-90}" \
   --env "BACKTEST_DAYS=${BACKTEST_DAYS:-30}" \
+  --env "VASTAI_API_KEY=${VASTAI_API_KEY}" \
   --disk "$DISK_GB" \
-  --onstart "$ONSTART_FILE" \
   --raw)
-
-rm -f "$ONSTART_FILE"
 
 CONTRACT_ID=$(echo "$LAUNCHED" | jq -r '.new_contract')
 

@@ -17,7 +17,27 @@ TIMEFRAME="1h"
 TRAINING_EXCHANGE=${TRAINING_EXCHANGE:-binance}  # binance=fast (no --dl-trades); kraken=slow but production-accurate
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
-fail() { log "❌ FAILED: $*"; exit 1; }
+fail() { log "❌ FAILED: $*"; self_terminate; exit 1; }
+
+self_terminate() {
+  # Destroy this Vast.ai instance via the API so billing stops immediately.
+  # Finds our own instance by querying all running instances for this API key.
+  if [ -z "$VASTAI_API_KEY" ]; then return; fi
+  log "Destroying Vast.ai instance via API..."
+  INSTANCE_ID=$(curl -sf "https://console.vast.ai/api/v0/instances/?api_key=$VASTAI_API_KEY" \
+    | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+instances = data.get('instances', [])
+running = [i for i in instances if i.get('actual_status') == 'running']
+print(running[0]['id'] if running else '')
+" 2>/dev/null || true)
+  if [ -n "$INSTANCE_ID" ]; then
+    curl -sf -X DELETE "https://console.vast.ai/api/v0/instances/$INSTANCE_ID/?api_key=$VASTAI_API_KEY" > /dev/null && \
+      log "✅ Instance $INSTANCE_ID destroyed." || \
+      log "⚠ Could not destroy instance (will expire on its own)."
+  fi
+}
 
 # ── Step 1: Clone repo ────────────────────────────────────────────────────────
 log "=== [1/4] Cloning repository ==="
@@ -129,7 +149,7 @@ if [ $GATE_RESULT -eq 0 ]; then
 else
   log "❌ Quality gate FAILED. Model not deployed."
   log "Review backtest results before deploying manually."
-  exit 1
 fi
 
-log "=== Pipeline complete. Instance will terminate. ==="
+log "=== Pipeline complete. ==="
+self_terminate
