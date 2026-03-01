@@ -74,12 +74,30 @@ if [ "$LOGS" = "true" ]; then
     exit 1
   fi
 
-  echo "📋 Tailing logs for instance $TARGET_INSTANCE (Ctrl+C to stop)..."
-  while true; do
-    $VASTAI logs "$TARGET_INSTANCE" --tail 20 2>/dev/null || true
-    sleep 15
-    echo "── $(date '+%H:%M:%S') ──────────────────────────────────────────────"
-  done
+  SSH_INFO=$(curl -sf "https://console.vast.ai/api/v0/instances/?api_key=$VASTAI_API_KEY" \
+    | python3 -c "
+import json, sys
+instances = json.load(sys.stdin).get('instances', [])
+for i in instances:
+    if str(i['id']) == '$TARGET_INSTANCE':
+        print(i.get('ssh_port',''), i.get('ssh_host',''))
+" 2>/dev/null)
+  SSH_PORT=$(echo "$SSH_INFO" | awk '{print $1}')
+  SSH_HOST=$(echo "$SSH_INFO" | awk '{print $2}')
+
+  if [ -n "$SSH_PORT" ] && [ -n "$SSH_HOST" ]; then
+    echo "📋 Streaming /var/log/onstart.log from instance $TARGET_INSTANCE via SSH (Ctrl+C to stop)..."
+    ssh -p "$SSH_PORT" "root@$SSH_HOST" \
+      -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+      "tail -f /var/log/onstart.log"
+  else
+    echo "📋 SSH not available yet — falling back to vastai logs (Ctrl+C to stop)..."
+    while true; do
+      $VASTAI logs "$TARGET_INSTANCE" --tail 20 2>/dev/null || true
+      sleep 15
+      echo "── $(date '+%H:%M:%S') ──────────────────────────────────────────────"
+    done
+  fi
   exit 0
 fi
 

@@ -98,10 +98,19 @@ RASPI_STACK_PATH="${RASPI_STACK_PATH:-${DATA_ROOT}/tradbot/}"
 echo "▶ Provisioning instance..."
 echo "▶ Prod host: $RASPI_USER@$RASPI_HOST | DATA_ROOT: $DATA_ROOT"
 
-# No --onstart needed: the Dockerfile CMD runs entrypoint.sh automatically.
-# CONTRACT_ID is passed in so entrypoint.sh can self-destroy the instance on exit.
+# Vast.ai's /.launch never calls Docker CMD — it only runs onstart.sh.
+# We write a temp file with our entrypoint command and pass it via --onstart.
+# Output is written to /var/log/onstart.log inside the instance.
+ONSTART_FILE=$(mktemp /tmp/vastai_onstart_XXXXXX.sh)
+cat > "$ONSTART_FILE" <<'ONSTART'
+#!/bin/bash
+bash /app/training/entrypoint.sh
+ONSTART
+trap 'rm -f "$ONSTART_FILE"' EXIT
+
 LAUNCHED=$(vastai create instance "$INSTANCE_ID" \
   --image "$DOCKER_IMAGE" \
+  --onstart "$ONSTART_FILE" \
   --env "RASPI_HOST=${RASPI_HOST}" \
   --env "RASPI_USER=${RASPI_USER}" \
   --env "RASPI_SSH_KEY_B64=${RASPI_SSH_KEY_B64}" \
