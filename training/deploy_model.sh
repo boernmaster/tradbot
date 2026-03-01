@@ -47,7 +47,8 @@ log "Setting up SSH key..."
 echo "$RASPI_SSH_KEY_B64" | base64 -d > "$KEY_FILE"
 chmod 600 "$KEY_FILE"
 
-SSH_OPTS="-i $KEY_FILE -o StrictHostKeyChecking=no -o ConnectTimeout=15"
+SSH_PORT="${RASPI_SSH_PORT:-22}"
+SSH_OPTS="-i $KEY_FILE -o StrictHostKeyChecking=no -o ConnectTimeout=15 -p $SSH_PORT"
 SSH="ssh $SSH_OPTS $RASPI_USER@$RASPI_HOST"
 RSYNC_SSH="rsync -avz --progress -e 'ssh $SSH_OPTS'"
 

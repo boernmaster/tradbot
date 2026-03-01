@@ -103,6 +103,7 @@ LAUNCHED=$(vastai create instance "$INSTANCE_ID" \
   --env "RASPI_HOST=${RASPI_HOST}" \
   --env "RASPI_USER=${RASPI_USER}" \
   --env "RASPI_SSH_KEY_B64=${RASPI_SSH_KEY_B64}" \
+  --env "RASPI_SSH_PORT=${RASPI_SSH_PORT:-22}" \
   --env "TAILSCALE_AUTH_KEY=${TAILSCALE_AUTH_KEY}" \
   --env "DATA_ROOT=${DATA_ROOT}" \
   --env "RASPI_MODEL_PATH=${RASPI_MODEL_PATH}" \

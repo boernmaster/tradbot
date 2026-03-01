@@ -39,7 +39,8 @@ DATA_ROOT="${DATA_ROOT:-/mnt/ssd}"
 RASPI_STACK_PATH="${RASPI_STACK_PATH:-${DATA_ROOT}/tradbot}"
 SSH_KEY="${RASPI_SSH_KEY_FILE:-$HOME/.ssh/vastai_raspi_key}"
 
-SSH_OPTS="-o StrictHostKeyChecking=no"
+SSH_PORT="${RASPI_SSH_PORT:-22}"
+SSH_OPTS="-o StrictHostKeyChecking=no -p $SSH_PORT"
 [[ -f "$SSH_KEY" ]] && SSH_OPTS="$SSH_OPTS -i $SSH_KEY"
 
 RSYNC_OPTS="-avz --delete"
