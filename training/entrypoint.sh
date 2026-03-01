@@ -110,12 +110,17 @@ fi
 
 log "Timerange: ${RANGE_START} → ${RANGE_END} | Pairs: $PAIR_COUNT | Model: $MODEL_CLASS"
 
+LOGFILE="$FREQTRADE_DIR/user_data/logs/freqtrade.log"
+mkdir -p "$FREQTRADE_DIR/user_data/logs"
+log "Log file: $LOGFILE  (tail -f $LOGFILE from SSH)"
+
 freqtrade backtesting \
   "${CONFIG_ARGS[@]}" \
   --strategy LightGBMStrategy \
   --freqaimodel "$MODEL_CLASS" \
   --timerange "${RANGE_START}-${RANGE_END}" \
   --userdir "$FREQTRADE_DIR/user_data" \
+  --logfile "$LOGFILE" \
   --export trades \
   2>&1 | grep -E "(Training new model|Training model|training for pair|Populating indicators|Loading data for|Backtesting|walk.forward|Starting training|Wins|Losses|Sortino|Drawdown|Total profit|RMSE|Finished|ERROR)" \
   | grep -v "^$" \

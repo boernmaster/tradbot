@@ -85,19 +85,17 @@ for i in instances:
   SSH_PORT=$(echo "$SSH_INFO" | awk '{print $1}')
   SSH_HOST=$(echo "$SSH_INFO" | awk '{print $2}')
 
-  if [ -n "$SSH_PORT" ] && [ -n "$SSH_HOST" ]; then
-    echo "📋 Streaming /var/log/onstart.log from instance $TARGET_INSTANCE via SSH (Ctrl+C to stop)..."
-    ssh -p "$SSH_PORT" "root@$SSH_HOST" \
-      -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-      "tail -f /var/log/onstart.log"
-  else
-    echo "📋 SSH not available yet — falling back to vastai logs (Ctrl+C to stop)..."
-    while true; do
-      $VASTAI logs "$TARGET_INSTANCE" --tail 20 2>/dev/null || true
-      sleep 15
-      echo "── $(date '+%H:%M:%S') ──────────────────────────────────────────────"
-    done
-  fi
+  SSH_HINT=""
+  [ -n "$SSH_PORT" ] && [ -n "$SSH_HOST" ] && SSH_HINT="ssh -p $SSH_PORT root@$SSH_HOST"
+
+  echo "📋 Polling vastai logs for instance $TARGET_INSTANCE (Ctrl+C to stop)..."
+  [ -n "$SSH_HINT" ] && echo "   For full logs: $SSH_HINT  →  tail -f /var/log/onstart.log"
+  echo ""
+  while true; do
+    $VASTAI logs "$TARGET_INSTANCE" --tail 20 2>/dev/null || true
+    sleep 15
+    echo "── $(date '+%H:%M:%S') ──────────────────────────────────────────────"
+  done
   exit 0
 fi
 

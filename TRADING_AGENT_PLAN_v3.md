@@ -1,5 +1,36 @@
 # Signal Trading Agent — Development Plan v3
 
+---
+
+## Current Status  _(updated 2026-03-01)_
+
+| Phase | Goal | Status |
+|---|---|---|
+| 1 | Freqtrade + FreqAI in Docker, LightGBM, local dry-run | ✅ Complete |
+| 2 | Vast.ai one-command training pipeline | ⚠️ Scripts done — Vast.ai log streaming broken, **deferred** |
+| 2b | **Local training workflow** (new) | 🔄 Active — `scripts/local_train.sh` created |
+| 3 | OpenClaw / Haiku skill | ✅ Complete |
+| 4 | Prod host deployment (multi-arch Docker) | 🟡 Scripts done, host not configured |
+| 5 | Signal integration on prod host | 🟡 Scripts done, host not configured |
+| 6 | 7-day continuous dry-run | ⬜ Not started |
+| 7 | Live trading sign-off | ⬜ Blocked by Phase 6 |
+
+### Active work
+- Training LightGBM locally with `scripts/local_train.sh` (BTC/USDT + ETH/USDT, Binance data)
+- Tuned strategy: `stoploss -0.10`, `trailing_stop: true`, `entry_threshold: 0.02`
+- Target: quality gate pass (Sortino ≥ 1.5, drawdown ≤ 20%)
+
+### Deferred / TODO
+- **Vast.ai log streaming** — `vastai_monitor.sh --logs` blocked by Vast.ai `.bashrc` `exec tmux` on all non-interactive SSH; sftp subsystem also unconfigured. Fix options: patch sshd in onstart.sh, or add HTTP log server to training image.
+- **Prod host setup** — Phase 4: configure NAS or RPi as prod host, set `RASPI_HOST` etc. in `.environment`
+- **Vast.ai pipeline end-to-end** — resume Phase 2 once local baseline is proven
+
+### Last backtest (2026-02-28, local machine)
+- Trades: 95 | Win rate: 65.3% ✅ | Drawdown: 4.44% ✅ | Sortino: -30.56 ❌
+- Market was -36.45% bear — stoploss triggered too often. Strategy tuned above.
+
+---
+
 ## Architecture Overview
 
 Three distinct roles across three environments.
@@ -786,4 +817,22 @@ RASPI_SSH_KEY_B64=                 # base64 -w0 ~/.ssh/vastai_raspi_key
 - Haiku reads results and controls start/stop
 - Zero direct order placement, ever
 - Trade decisions are 100% deterministic Freqtrade strategy
-```
+
+---
+
+## Deferred / Known Issues
+
+### Vast.ai log streaming (low priority)
+`vastai_monitor.sh --logs` cannot stream `/var/log/onstart.log` because:
+1. Vast.ai's `.bashrc` does `exec tmux new-session` on all SSH connections — even non-interactive ones. `exec` replaces bash, so any command passed to SSH never runs.
+2. The sftp subsystem is not configured in Vast.ai's sshd — sftp exits with code 1 immediately.
+`--logs` currently falls back to `vastai logs` API polling (shows container stdout, not onstart.log).
+
+**Fix options (pick one when resuming Vast.ai work):**
+- A. In `vastai_train.sh` onstart script: add sftp subsystem + `sed -i '/exec tmux/d' ~/.bashrc` + restart sshd, then monitor can sftp-poll the log file.
+- B. Add a small Python HTTP server to the training image that serves `/var/log/onstart.log` on port 8080. Monitor fetches via `curl` through the `-L 8080:localhost:8080` SSH tunnel.
+
+### Local training scripts
+- `scripts/local_train.sh` — created 2026-03-01
+- Uses `docker-compose.dev.yml` + Binance data (fast, no --dl-trades)
+- Runs FreqAI walk-forward backtest, quality gate, optional `--deploy` to prod host

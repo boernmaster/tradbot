@@ -91,9 +91,18 @@ def main():
     losses       = s.get("losses", 0)
     win_rate     = (wins / total_trades * 100) if total_trades > 0 else 0
     sortino      = s.get("sortino", 0)
-    max_drawdown = s.get("max_drawdown", s.get("max_drawdown_abs", 0))
-    if max_drawdown < 1:
-        max_drawdown *= 100  # convert fraction to percent if needed
+    # Freqtrade JSON uses max_drawdown_account (fraction, e.g. 0.025 = 2.5%)
+    # Fallback chain: max_drawdown_account → max_relative_drawdown → max_drawdown → max_drawdown_abs (USDT)
+    max_drawdown_raw = s.get(
+        "max_drawdown_account",
+        s.get("max_relative_drawdown", s.get("max_drawdown", 0))
+    )
+    if max_drawdown_raw < 1:
+        max_drawdown = max_drawdown_raw * 100  # fraction → percent
+    else:
+        # Absolute USDT value as last resort — derive percent from starting balance
+        starting_balance = s.get("starting_balance", 1000)
+        max_drawdown = s.get("max_drawdown_abs", 0) / starting_balance * 100
     profit_pct   = s.get("profit_total_abs", s.get("profit_mean", 0))
     sharpe       = s.get("sharpe", 0)
 
