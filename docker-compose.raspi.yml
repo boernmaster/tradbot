@@ -34,6 +34,10 @@ services:
       # configs — read from repo (keep in sync via deploy_stack.sh)
       - ${RASPI_STACK_PATH:-/mnt/ssd/tradbot}/freqtrade/config.json:/freqtrade/config.json:ro
       - ${RASPI_STACK_PATH:-/mnt/ssd/tradbot}/freqtrade/config.freqai.json:/freqtrade/config.freqai.json:ro
+      # dev override: switches exchange to Binance for dry-run (remove for live Kraken trading)
+      - ${RASPI_STACK_PATH:-/mnt/ssd/tradbot}/freqtrade/config.dev.json:/freqtrade/config.dev.json:ro
+      # strategies — read from repo
+      - ${RASPI_STACK_PATH:-/mnt/ssd/tradbot}/freqtrade/user_data/strategies:/freqtrade/user_data/strategies:ro
     ports:
       # Bind to LAN IP only — never expose 0.0.0.0 in production
       - "${PROD_LAN_IP:-127.0.0.1}:8080:8080"
@@ -41,6 +45,7 @@ services:
       trade
       --config /freqtrade/config.json
       --config /freqtrade/config.freqai.json
+      --config /freqtrade/config.dev.json
       --strategy LightGBMStrategy
       --logfile /freqtrade/user_data/logs/freqtrade.log
     env_file:

@@ -21,8 +21,8 @@
 
 set -e
 
-DRY_RUN=false
-[[ "$*" == *"--dry-run"* ]] && DRY_RUN=true
+PREVIEW=false
+[[ "$*" == *"--dry-run"* ]] && PREVIEW=true
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -37,14 +37,24 @@ source "$PROJECT_ROOT/.environment" 2>/dev/null || {
 
 DATA_ROOT="${DATA_ROOT:-/mnt/ssd}"
 RASPI_STACK_PATH="${RASPI_STACK_PATH:-${DATA_ROOT}/tradbot}"
-SSH_KEY="${RASPI_SSH_KEY_FILE:-$HOME/.ssh/vastai_raspi_key}"
 
 SSH_PORT="${RASPI_SSH_PORT:-22}"
 SSH_OPTS="-o StrictHostKeyChecking=no -p $SSH_PORT"
-[[ -f "$SSH_KEY" ]] && SSH_OPTS="$SSH_OPTS -i $SSH_KEY"
+
+# Decode SSH key from base64 env var into a temp file
+TMPKEY=""
+if [ -n "$RASPI_SSH_KEY_B64" ]; then
+    TMPKEY=$(mktemp)
+    echo "$RASPI_SSH_KEY_B64" | base64 -d > "$TMPKEY"
+    chmod 600 "$TMPKEY"
+    SSH_OPTS="$SSH_OPTS -i $TMPKEY"
+    trap 'rm -f "$TMPKEY"' EXIT
+elif [ -f "${RASPI_SSH_KEY_FILE:-$HOME/.ssh/vastai_raspi_key}" ]; then
+    SSH_OPTS="$SSH_OPTS -i ${RASPI_SSH_KEY_FILE:-$HOME/.ssh/vastai_raspi_key}"
+fi
 
 RSYNC_OPTS="-avz --delete"
-[[ "$DRY_RUN" = "true" ]] && RSYNC_OPTS="$RSYNC_OPTS --dry-run" && echo "🔎 DRY-RUN mode — no files will be transferred"
+[[ "$PREVIEW" = "true" ]] && RSYNC_OPTS="$RSYNC_OPTS --dry-run" && echo "🔎 DRY-RUN mode — no files will be transferred"
 
 echo "▶ Deploying stack to $RASPI_USER@$RASPI_HOST:$RASPI_STACK_PATH"
 
@@ -63,7 +73,7 @@ rsync $RSYNC_OPTS \
     "$PROJECT_ROOT/" \
     "$RASPI_USER@$RASPI_HOST:$RASPI_STACK_PATH/"
 
-if [[ "$DRY_RUN" = "true" ]]; then
+if [[ "$PREVIEW" = "true" ]]; then
     echo ""
     echo "✅ Dry-run complete. Run without --dry-run to apply."
     exit 0

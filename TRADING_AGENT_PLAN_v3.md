@@ -7,27 +7,29 @@
 | Phase | Goal | Status |
 |---|---|---|
 | 1 | Freqtrade + FreqAI in Docker, LightGBM, local dry-run | ✅ Complete |
-| 2 | Vast.ai one-command training pipeline | ⚠️ Scripts done — Vast.ai log streaming broken, **deferred** |
-| 2b | **Local training workflow** (new) | 🔄 Active — `scripts/local_train.sh` created |
+| 2 | Vast.ai one-command training pipeline | ⚠️ Scripts done — log streaming deferred |
+| 2b | **Local training workflow** (new) | ✅ Complete — quality gate passing |
 | 3 | OpenClaw / Haiku skill | ✅ Complete |
-| 4 | Prod host deployment (multi-arch Docker) | 🟡 Scripts done, host not configured |
-| 5 | Signal integration on prod host | 🟡 Scripts done, host not configured |
-| 6 | 7-day continuous dry-run | ⬜ Not started |
+| 4 | Prod host deployment (multi-arch Docker) | ✅ Complete — stack running on NAS |
+| 5 | Signal integration on prod host | 🟡 Stack running; signal-cli not yet registered |
+| 6 | 7-day continuous dry-run | 🔄 Started — FreqAI inference running |
 | 7 | Live trading sign-off | ⬜ Blocked by Phase 6 |
 
 ### Active work
-- Training LightGBM locally with `scripts/local_train.sh` (BTC/USDT + ETH/USDT, Binance data)
-- Tuned strategy: `stoploss -0.10`, `trailing_stop: true`, `entry_threshold: 0.02`
-- Target: quality gate pass (Sortino ≥ 1.5, drawdown ≤ 20%)
+- **Phase 6**: Freqtrade dry-run live on NAS (KGB112, `http://10.0.0.32:8080`)
+- FreqAI loading trained model `lgbm-v1`, generating signals on BTC/USDT + ETH/USDT
+- Using Binance exchange for dry-run data (Kraken switched in for Phase 7)
+
+### Last backtest (2026-03-01, local)
+- Trades: 142 | Win rate: 69% ✅ | Drawdown: 2.48% ✅ | Sortino: **2.68** ✅
+- Total profit: +20.47% | Period: Jan–Sep 2025
+- Strategy: `stoploss -0.10`, `trailing_stop: true`, `entry_threshold: 0.02`
 
 ### Deferred / TODO
-- **Vast.ai log streaming** — `vastai_monitor.sh --logs` blocked by Vast.ai `.bashrc` `exec tmux` on all non-interactive SSH; sftp subsystem also unconfigured. Fix options: patch sshd in onstart.sh, or add HTTP log server to training image.
-- **Prod host setup** — Phase 4: configure NAS or RPi as prod host, set `RASPI_HOST` etc. in `.environment`
-- **Vast.ai pipeline end-to-end** — resume Phase 2 once local baseline is proven
-
-### Last backtest (2026-02-28, local machine)
-- Trades: 95 | Win rate: 65.3% ✅ | Drawdown: 4.44% ✅ | Sortino: -30.56 ❌
-- Market was -36.45% bear — stoploss triggered too often. Strategy tuned above.
+- **Signal registration** — register signal-cli bot number to complete Phase 5
+- **Kraken data for live** — before Phase 7: download Kraken OHLCV, remove `config.dev.json` from prod compose, set real Kraken keys
+- **Vast.ai log streaming** — `--logs` falls back to API polling; fix deferred (see Known Issues)
+- **Vast.ai pipeline end-to-end** — resume Phase 2 once dry-run baseline is proven
 
 ---
 
@@ -817,6 +819,64 @@ RASPI_SSH_KEY_B64=                 # base64 -w0 ~/.ssh/vastai_raspi_key
 - Haiku reads results and controls start/stop
 - Zero direct order placement, ever
 - Trade decisions are 100% deterministic Freqtrade strategy
+
+---
+
+## Prod Host Setup (NAS — KGB112)
+
+The prod host is the **Synology NAS itself** (`KGB112`, `10.0.0.32`), not a separate RPi.
+Both dev work and 24/7 inference run on the same machine.
+
+### Path layout
+| Purpose | Path |
+|---|---|
+| Repo / configs / strategies | `/volume1/docker/tradbot` (`RASPI_STACK_PATH`) |
+| Models, data, logs, signal-cli | `/volume1/docker/tradbot-data` (`DATA_ROOT`) |
+
+### Running the stack
+```bash
+# Start / update (from repo root):
+DATA_ROOT=/volume1/docker/tradbot-data \
+docker compose -f docker-compose.raspi.yml --env-file .environment up -d
+
+# Restart single service:
+DATA_ROOT=/volume1/docker/tradbot-data \
+docker compose -f docker-compose.raspi.yml --env-file .environment restart freqtrade
+
+# Tail logs:
+DATA_ROOT=/volume1/docker/tradbot-data \
+docker compose -f docker-compose.raspi.yml --env-file .environment logs -f freqtrade
+```
+
+### Web UI
+- URL: `http://10.0.0.32:8080`
+- Username: `trader` (set in `.environment` as `FREQTRADE_USERNAME`)
+- Password: see `FREQTRADE_PASSWORD` in `.environment`
+
+### Volume mounts (docker-compose.raspi.yml)
+`user_data/` is created by the container as UID 1000. To create subdirectories from the host:
+```bash
+# Use Docker to create dirs with correct ownership:
+DATA_ROOT=/volume1/docker/tradbot-data \
+docker compose -f docker-compose.raspi.yml --env-file .environment \
+  run --rm --entrypoint "" freqtrade mkdir -p /freqtrade/user_data/logs
+```
+
+### Binance data for dry-run
+Freqtrade needs OHLCV data at startup even in dry-run. Kraken's API doesn't provide
+sufficient history for FreqAI startup. Fix: `config.dev.json` is included in the prod
+compose command to override exchange → Binance for the dry-run phase.
+Binance feather files live at: `DATA_ROOT/freqtrade/user_data/data/binance/`
+
+**Before going live (Phase 7):**
+1. Download Kraken data: `freqtrade download-data --exchange kraken --dl-trades ...`
+2. Remove `--config /freqtrade/config.dev.json` from `docker-compose.raspi.yml` command
+3. Set `DRY_RUN=false` in `.environment`
+
+### deploy_stack.sh — not needed for NAS
+Since the NAS IS the prod host, `deploy_stack.sh` (designed for PC→RPi rsync) is not
+used. Config changes take effect immediately from the repo. Restart freqtrade to pick up
+strategy or config changes.
 
 ---
 
