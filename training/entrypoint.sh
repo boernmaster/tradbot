@@ -47,12 +47,16 @@ cd "$WORK_DIR"
 # ── Step 2: Download data ─────────────────────────────────────────────────────
 TOTAL_DAYS=$(( TRAIN_DAYS + BACKTEST_DAYS + 7 ))  # +7 buffer for FreqAI warmup
 
-log "=== [2/4] Downloading $TRAINING_EXCHANGE data ==="
-log "Pairs: $PAIRS | Timeframe: $TIMEFRAME | Days: $TOTAL_DAYS"
-
 IFS=',' read -ra PAIR_ARRAY <<< "$PAIRS"
+PAIR_COUNT=${#PAIR_ARRAY[@]}
+
+log "=== [2/4] Downloading $TRAINING_EXCHANGE data ==="
+log "Exchange: $TRAINING_EXCHANGE | Timeframe: $TIMEFRAME | Days: $TOTAL_DAYS | Pairs: $PAIR_COUNT"
+
+PAIR_IDX=0
 for PAIR in "${PAIR_ARRAY[@]}"; do
-  log "Downloading $PAIR..."
+  PAIR_IDX=$(( PAIR_IDX + 1 ))
+  log "  [$PAIR_IDX/$PAIR_COUNT] $PAIR — fetching ${TOTAL_DAYS}d of ${TIMEFRAME} candles..."
   EXTRA_OPTS=""
   [[ "$TRAINING_EXCHANGE" = "kraken" ]] && EXTRA_OPTS="--dl-trades"
 
@@ -64,8 +68,11 @@ for PAIR in "${PAIR_ARRAY[@]}"; do
     --days "$TOTAL_DAYS" \
     --userdir "$FREQTRADE_DIR/user_data" \
     $EXTRA_OPTS \
-    2>&1 | tail -5
+    2>&1 | grep -E "(Download|Downloading|rows|candles|Skipping|up to date|Done|ERROR)" \
+         | sed "s/^/    /" \
+    || true
 done
+log "  ✅ Data download complete ($PAIR_COUNT pairs)"
 
 # ── Step 3: Select model class ────────────────────────────────────────────────
 if [ "$MODEL" = "lstm" ]; then
@@ -101,6 +108,8 @@ if [[ "$TRAINING_EXCHANGE" != "kraken" ]]; then
   log "Exchange override: using $TRAINING_EXCHANGE data"
 fi
 
+log "Timerange: ${RANGE_START} → ${RANGE_END} | Pairs: $PAIR_COUNT | Model: $MODEL_CLASS"
+
 freqtrade backtesting \
   "${CONFIG_ARGS[@]}" \
   --strategy LightGBMStrategy \
@@ -108,7 +117,12 @@ freqtrade backtesting \
   --timerange "${RANGE_START}-${RANGE_END}" \
   --userdir "$FREQTRADE_DIR/user_data" \
   --export trades \
-  2>&1 | grep -E "(Training|Backtesting|Wins|Losses|Sortino|Drawdown|Total profit|Error|RMSE|Finished)" || true
+  2>&1 | grep -E "(Training new model|Training model|training for pair|Populating indicators|Loading data for|Backtesting|walk.forward|Starting training|Wins|Losses|Sortino|Drawdown|Total profit|RMSE|Finished|ERROR)" \
+  | grep -v "^$" \
+  | sed 's/^[0-9-]* [0-9:]* - freqai[^ ]* - [A-Z]* - /  [freqai] /' \
+  | sed 's/^[0-9-]* [0-9:]* - [^ ]* - INFO - /  /' \
+  | sed 's/^[0-9-]* [0-9:]* - [^ ]* - WARNING - /  ⚠ /' \
+  || true
 
 # Discover the result file via Freqtrade's pointer file
 LAST_RESULT_PTR="$FREQTRADE_DIR/user_data/backtest_results/.last_result.json"
