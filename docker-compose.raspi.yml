@@ -83,13 +83,8 @@ services:
 
   # ── OpenClaw — Signal → Haiku gateway ─────────────────────────────────────
   openclaw:
-    image: node:22-alpine
+    image: ghcr.io/boernmaster/tradbot-openclaw:latest
     restart: unless-stopped
-    working_dir: /app
-    # Installs openclaw globally on first start; subsequent starts use cache
-    command: >
-      sh -c "npm install -g openclaw@latest 2>/dev/null &&
-             openclaw gateway --port 18789 --config /root/.openclaw/openclaw.json"
     volumes:
       # Persistent OpenClaw state (Signal account, cache)
       - ${DATA_ROOT:-/mnt/ssd}/openclaw:/root/.openclaw
