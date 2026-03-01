@@ -7,6 +7,8 @@
 #   ./scripts/vastai_monitor.sh --watch      # refresh every 30s
 #   ./scripts/vastai_monitor.sh --logs       # tail logs of first running instance
 #   ./scripts/vastai_monitor.sh --logs 32185542  # tail logs of specific instance
+#   ./scripts/vastai_monitor.sh --destroy    # destroy first running instance
+#   ./scripts/vastai_monitor.sh --destroy 32185542  # destroy specific instance
 
 set -e
 
@@ -23,36 +25,58 @@ fi
 
 WATCH=false
 LOGS=false
-LOG_INSTANCE=""
+DESTROY=false
+TARGET_INSTANCE=""
 
 for arg in "$@"; do
   case "$arg" in
-    --watch) WATCH=true ;;
-    --logs)  LOGS=true ;;
-    [0-9]*)  LOG_INSTANCE="$arg" ;;
+    --watch)   WATCH=true ;;
+    --logs)    LOGS=true ;;
+    --destroy) DESTROY=true ;;
+    [0-9]*)    TARGET_INSTANCE="$arg" ;;
   esac
 done
 
-# ── Log tail mode ─────────────────────────────────────────────────────────────
-if [ "$LOGS" = "true" ]; then
-  if [ -z "$LOG_INSTANCE" ]; then
-    LOG_INSTANCE=$(curl -sf "https://console.vast.ai/api/v0/instances/?api_key=$VASTAI_API_KEY" \
-      | python3 -c "
+# ── Resolve first running instance if no ID given ────────────────────────────
+get_first_instance() {
+  curl -sf "https://console.vast.ai/api/v0/instances/?api_key=$VASTAI_API_KEY" \
+    | python3 -c "
 import json, sys
 instances = json.load(sys.stdin).get('instances', [])
 running = [i for i in instances if i.get('actual_status') == 'running']
 print(running[0]['id'] if running else '')
-" 2>/dev/null)
+" 2>/dev/null
+}
+
+# ── Destroy mode ──────────────────────────────────────────────────────────────
+if [ "$DESTROY" = "true" ]; then
+  if [ -z "$TARGET_INSTANCE" ]; then
+    TARGET_INSTANCE=$(get_first_instance)
+  fi
+  if [ -z "$TARGET_INSTANCE" ]; then
+    echo "❌ No running instance found"
+    exit 1
+  fi
+  echo "⚠️  Destroying instance $TARGET_INSTANCE (irreversible)..."
+  $VASTAI destroy instance "$TARGET_INSTANCE" --api-key "$VASTAI_API_KEY"
+  echo "✅ Instance $TARGET_INSTANCE destroyed."
+  exit 0
+fi
+
+# ── Log tail mode ─────────────────────────────────────────────────────────────
+if [ "$LOGS" = "true" ]; then
+  if [ -z "$TARGET_INSTANCE" ]; then
+    TARGET_INSTANCE=$(get_first_instance)
   fi
 
-  if [ -z "$LOG_INSTANCE" ]; then
+  if [ -z "$TARGET_INSTANCE" ]; then
     echo "❌ No running instance found"
     exit 1
   fi
 
-  echo "📋 Tailing logs for instance $LOG_INSTANCE (Ctrl+C to stop)..."
+  echo "📋 Tailing logs for instance $TARGET_INSTANCE (Ctrl+C to stop)..."
   while true; do
-    $VASTAI logs "$LOG_INSTANCE" --tail 20 2>/dev/null || true
+    $VASTAI logs "$TARGET_INSTANCE" --tail 20 2>/dev/null || true
     sleep 15
     echo "── $(date '+%H:%M:%S') ──────────────────────────────────────────────"
   done
@@ -115,7 +139,7 @@ for i in instances:
   echo ""
   echo "  Commands:"
   echo "    Logs:    ./scripts/vastai_monitor.sh --logs [instance_id]"
-  echo "    Destroy: $VASTAI destroy instance <id>"
+  echo "    Destroy: ./scripts/vastai_monitor.sh --destroy [instance_id]"
 }
 
 # ── Watch loop ────────────────────────────────────────────────────────────────
