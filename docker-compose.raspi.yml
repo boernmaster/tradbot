@@ -47,6 +47,7 @@ services:
       --config /freqtrade/config.freqai.json
       --config /freqtrade/config.dev.json
       --strategy LightGBMStrategy
+      --freqaimodel LightGBMRegressor
       --logfile /freqtrade/user_data/logs/freqtrade.log
     env_file:
       - .environment

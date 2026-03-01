@@ -1,4 +1,6 @@
 {
+    "stake_currency": "USDT",
+    "dry_run_wallet": 1000,
     "exchange": {
         "name": "binance",
         "key": "",
