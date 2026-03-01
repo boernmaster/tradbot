@@ -33,13 +33,15 @@ fi
 vastai set api-key "$VASTAI_API_KEY" > /dev/null
 
 # ── Search for instance ───────────────────────────────────────────────────────
-# gpu_ram>=16 + cuda_vers>=12.0 matches: RTX 3090 (24GB), 4080 (16GB), 4090 (24GB)
-echo "🔍 Searching for cheapest GPU (≥16GB VRAM, CUDA 12+)..."
+# gpu_ram>=16 + total_flops>=12 excludes P100 (~10 TFLOPS) and below.
+# Targets V100 (12.5), A100 (15.6), RTX 3090 (35), RTX 4090 (82) etc.
+echo "🔍 Searching for cheapest GPU (≥16GB VRAM, ≥12 TFLOPS, CUDA 12+)..."
 
 OFFER=$(vastai search offers \
   "rentable=true \
    num_gpus=1 \
    gpu_ram>=16 \
+   total_flops>=12 \
    inet_down>$MIN_DOWN_MBPS \
    cpu_ram>$MIN_RAM_GB \
    disk_space>$DISK_GB \
